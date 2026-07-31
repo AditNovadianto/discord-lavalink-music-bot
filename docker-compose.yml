@@ -3,17 +3,25 @@ services:
         image: ghcr.io/lavalink-devs/lavalink:4-alpine
         container_name: discord-lavalink
         restart: unless-stopped
+
+        mem_limit: 600m
+        cpus: 1.0
+
         environment:
-            _JAVA_OPTIONS: "-Xms256M -Xmx512M"
+            _JAVA_OPTIONS: "-Xms128M -Xmx384M"
             SERVER_PORT: "2333"
             LAVALINK_SERVER_PASSWORD: "${LAVALINK_PASSWORD:-youshallnotpass}"
+
         volumes:
             - ./lavalink/application.yml:/opt/Lavalink/application.yml:ro
             - lavalink-logs:/opt/Lavalink/logs
-        ports:
-            - "2333:2333"
+
+        expose:
+            - "2333"
+
         networks:
             - music-network
+
         healthcheck:
             test:
                 [
@@ -23,23 +31,31 @@ services:
             interval: 15s
             timeout: 5s
             retries: 10
-            start_period: 40s
+            start_period: 60s
 
     bot:
         build:
             context: .
             dockerfile: Dockerfile
+
         container_name: discord-music-bot
         restart: unless-stopped
+
+        mem_limit: 256m
+        cpus: 0.5
+
         env_file:
             - .env
+
         environment:
             LAVALINK_HOST: lavalink
             LAVALINK_PORT: "2333"
             LAVALINK_SECURE: "false"
+
         depends_on:
             lavalink:
                 condition: service_healthy
+
         networks:
             - music-network
 
