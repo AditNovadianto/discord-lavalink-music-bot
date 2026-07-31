@@ -1,53 +1,51 @@
 services:
-  lavalink:
-    image: ghcr.io/lavalink-devs/lavalink:4-alpine
-    container_name: discord-lavalink
-    restart: unless-stopped
-    environment:
-      _JAVA_OPTIONS: "-Xms256M -Xmx512M"
-      SERVER_PORT: "2333"
-      LAVALINK_SERVER_PASSWORD: "${LAVALINK_PASSWORD:-youshallnotpass}"
-    volumes:
-      - ./lavalink/application.yml:/opt/Lavalink/application.yml:ro
-      - lavalink-plugins:/opt/Lavalink/plugins
-      - lavalink-logs:/opt/Lavalink/logs
-    ports:
-      - "2333:2333"
-    networks:
-      - music-network
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "wget -q --header='Authorization: ${LAVALINK_PASSWORD:-youshallnotpass}' -O - http://localhost:2333/version || exit 1"
-        ]
-      interval: 15s
-      timeout: 5s
-      retries: 10
-      start_period: 40s
+    lavalink:
+        image: ghcr.io/lavalink-devs/lavalink:4-alpine
+        container_name: discord-lavalink
+        restart: unless-stopped
+        environment:
+            _JAVA_OPTIONS: "-Xms256M -Xmx512M"
+            SERVER_PORT: "2333"
+            LAVALINK_SERVER_PASSWORD: "${LAVALINK_PASSWORD:-youshallnotpass}"
+        volumes:
+            - ./lavalink/application.yml:/opt/Lavalink/application.yml:ro
+            - lavalink-logs:/opt/Lavalink/logs
+        ports:
+            - "2333:2333"
+        networks:
+            - music-network
+        healthcheck:
+            test:
+                [
+                    "CMD-SHELL",
+                    "wget -q --header='Authorization: ${LAVALINK_PASSWORD:-youshallnotpass}' -O - http://localhost:2333/version || exit 1",
+                ]
+            interval: 15s
+            timeout: 5s
+            retries: 10
+            start_period: 40s
 
-  bot:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: discord-music-bot
-    restart: unless-stopped
-    env_file:
-      - .env
-    environment:
-      LAVALINK_HOST: lavalink
-      LAVALINK_PORT: "2333"
-      LAVALINK_SECURE: "false"
-    depends_on:
-      lavalink:
-        condition: service_healthy
-    networks:
-      - music-network
+    bot:
+        build:
+            context: .
+            dockerfile: Dockerfile
+        container_name: discord-music-bot
+        restart: unless-stopped
+        env_file:
+            - .env
+        environment:
+            LAVALINK_HOST: lavalink
+            LAVALINK_PORT: "2333"
+            LAVALINK_SECURE: "false"
+        depends_on:
+            lavalink:
+                condition: service_healthy
+        networks:
+            - music-network
 
 networks:
-  music-network:
-    driver: bridge
+    music-network:
+        driver: bridge
 
 volumes:
-  lavalink-plugins:
-  lavalink-logs:
+    lavalink-logs:
