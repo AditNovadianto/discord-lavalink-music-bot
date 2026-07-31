@@ -1,227 +1,278 @@
-const { EmbedBuilder } = require('discord.js');
-const { formatTime } = require('../utils/format');
+const { EmbedBuilder } = require("discord.js");
+const { formatTime } = require("../utils/format");
 
 class GuildMusicQueue {
-  constructor({ guildId, textChannel, player, shoukaku }) {
-    this.guildId = guildId;
-    this.textChannel = textChannel;
-    this.player = player;
-    this.shoukaku = shoukaku;
+    constructor({ guildId, textChannel, player, shoukaku, onIdleDisconnect }) {
+        this.guildId = guildId;
+        this.textChannel = textChannel;
+        this.player = player;
+        this.shoukaku = shoukaku;
+        this.onIdleDisconnect = onIdleDisconnect;
 
-    this.tracks = [];
-    this.current = null;
-    this.volume = 75;
-    this.loopMode = 'off';
-    this.destroyed = false;
-    this.eventsBound = false;
+        this.tracks = [];
+        this.current = null;
+        this.volume = 75;
+        this.loopMode = "off";
+        this.destroyed = false;
+        this.eventsBound = false;
 
-    this.bindEvents();
-  }
+        this.disconnectTimer = null;
+        this.idleTimeout = 2 * 60 * 1000;
 
-  bindEvents() {
-    if (this.eventsBound) return;
-    this.eventsBound = true;
-
-    this.player.on('start', async () => {
-      if (!this.current) return;
-
-      const embed = new EmbedBuilder()
-        .setTitle('🎶 Sedang Diputar')
-        .setDescription(`**[${this.current.info.title}](${this.current.info.uri})**`)
-        .addFields(
-          {
-            name: 'Durasi',
-            value: formatTime(this.current.info.length),
-            inline: true,
-          },
-          {
-            name: 'Diminta oleh',
-            value: `<@${this.current.requestedBy}>`,
-            inline: true,
-          },
-          {
-            name: 'Sumber',
-            value: this.current.info.sourceName || '-',
-            inline: true,
-          },
-        )
-        .setTimestamp();
-
-      if (this.current.info.artworkUrl) {
-        embed.setThumbnail(this.current.info.artworkUrl);
-      }
-
-      await this.textChannel.send({ embeds: [embed] }).catch(() => null);
-    });
-
-    this.player.on('end', async (data) => {
-      if (this.destroyed || data.reason === 'replaced') return;
-
-      const finished = this.current;
-      this.current = null;
-
-      if (finished && this.loopMode === 'track') {
-        this.tracks.unshift(finished);
-      } else if (finished && this.loopMode === 'queue') {
-        this.tracks.push(finished);
-      }
-
-      await this.playNext();
-    });
-
-    this.player.on('exception', async (data) => {
-      console.error(`[LAVALINK EXCEPTION][${this.guildId}]`, data);
-      await this.textChannel
-        .send(`❌ Lagu mengalami error dari Lavalink. Mencoba lagu berikutnya.`)
-        .catch(() => null);
-    });
-
-    this.player.on('stuck', async () => {
-      await this.textChannel
-        .send('⚠️ Stream tersendat terlalu lama. Lagu dilewati.')
-        .catch(() => null);
-
-      await this.player.stopTrack().catch(() => null);
-    });
-
-    this.player.on('closed', (data) => {
-      console.warn(`[VOICE CLOSED][${this.guildId}]`, data);
-    });
-  }
-
-  enqueue(track) {
-    this.tracks.push(track);
-  }
-
-  enqueueMany(tracks) {
-    this.tracks.push(...tracks);
-  }
-
-  async playNext() {
-    if (this.destroyed || this.current) return;
-
-    const next = this.tracks.shift();
-
-    if (!next) {
-      await this.textChannel.send('✅ Antrean sudah selesai.').catch(() => null);
-      return;
+        this.bindEvents();
     }
 
-    this.current = next;
+    bindEvents() {
+        if (this.eventsBound) return;
+        this.eventsBound = true;
 
-    try {
-      await this.player.playTrack({
-        track: {
-          encoded: next.encoded,
-          userData: {
-            requestedBy: next.requestedBy,
-          },
-        },
-      });
+        this.player.on("start", async () => {
+            if (!this.current) return;
 
-      await this.player.setGlobalVolume(this.volume);
-    } catch (error) {
-      console.error(`[PLAY TRACK ERROR][${this.guildId}]`, error);
-      this.current = null;
-      await this.playNext();
+            const embed = new EmbedBuilder()
+                .setTitle("🎶 Sedang Diputar")
+                .setDescription(
+                    `**[${this.current.info.title}](${this.current.info.uri})**`,
+                )
+                .addFields(
+                    {
+                        name: "Durasi",
+                        value: formatTime(this.current.info.length),
+                        inline: true,
+                    },
+                    {
+                        name: "Diminta oleh",
+                        value: `<@${this.current.requestedBy}>`,
+                        inline: true,
+                    },
+                    {
+                        name: "Sumber",
+                        value: this.current.info.sourceName || "-",
+                        inline: true,
+                    },
+                )
+                .setTimestamp();
+
+            if (this.current.info.artworkUrl) {
+                embed.setThumbnail(this.current.info.artworkUrl);
+            }
+
+            await this.textChannel.send({ embeds: [embed] }).catch(() => null);
+        });
+
+        this.player.on("end", async (data) => {
+            if (this.destroyed || data.reason === "replaced") return;
+
+            const finished = this.current;
+            this.current = null;
+
+            if (finished && this.loopMode === "track") {
+                this.tracks.unshift(finished);
+            } else if (finished && this.loopMode === "queue") {
+                this.tracks.push(finished);
+            }
+
+            await this.playNext();
+        });
+
+        this.player.on("exception", async (data) => {
+            console.error(`[LAVALINK EXCEPTION][${this.guildId}]`, data);
+            await this.textChannel
+                .send(
+                    `❌ Lagu mengalami error dari Lavalink. Mencoba lagu berikutnya.`,
+                )
+                .catch(() => null);
+        });
+
+        this.player.on("stuck", async () => {
+            await this.textChannel
+                .send("⚠️ Stream tersendat terlalu lama. Lagu dilewati.")
+                .catch(() => null);
+
+            await this.player.stopTrack().catch(() => null);
+        });
+
+        this.player.on("closed", (data) => {
+            console.warn(`[VOICE CLOSED][${this.guildId}]`, data);
+        });
     }
-  }
 
-  async skip() {
-    if (!this.current) return false;
-    await this.player.stopTrack();
-    return true;
-  }
+    clearDisconnectTimer() {
+        if (!this.disconnectTimer) return;
 
-  async pause() {
-    await this.player.setPaused(true);
-  }
-
-  async resume() {
-    await this.player.setPaused(false);
-  }
-
-  async setVolume(value) {
-    this.volume = value;
-    await this.player.setGlobalVolume(value);
-  }
-
-  shuffle() {
-    for (let i = this.tracks.length - 1; i > 0; i -= 1) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [this.tracks[i], this.tracks[j]] = [this.tracks[j], this.tracks[i]];
+        clearTimeout(this.disconnectTimer);
+        this.disconnectTimer = null;
     }
-  }
 
-  remove(position) {
-    const index = position - 1;
-    if (index < 0 || index >= this.tracks.length) return null;
-    return this.tracks.splice(index, 1)[0];
-  }
+    scheduleDisconnect() {
+        this.clearDisconnectTimer();
 
-  clear() {
-    this.tracks = [];
-  }
+        this.disconnectTimer = setTimeout(async () => {
+            this.disconnectTimer = null;
 
-  setLoop(mode) {
-    this.loopMode = mode;
-  }
+            if (this.destroyed || this.current || this.tracks.length > 0) {
+                return;
+            }
 
-  async destroy() {
-    if (this.destroyed) return;
+            await this.textChannel
+                .send(
+                    "👋 Tidak ada lagu selama 2 menit. Bot keluar dari voice channel.",
+                )
+                .catch(() => null);
 
-    this.destroyed = true;
-    this.clear();
-    this.current = null;
+            if (this.onIdleDisconnect) {
+                await this.onIdleDisconnect();
+            }
+        }, this.idleTimeout);
+    }
 
-    await this.player.stopTrack().catch(() => null);
-    await this.shoukaku.leaveVoiceChannel(this.guildId).catch(() => null);
-  }
+    enqueue(track) {
+        this.clearDisconnectTimer();
+        this.tracks.push(track);
+    }
+
+    enqueueMany(tracks) {
+        this.clearDisconnectTimer();
+        this.tracks.push(...tracks);
+    }
+
+    async playNext() {
+        this.clearDisconnectTimer();
+
+        if (this.destroyed || this.current) return;
+
+        const next = this.tracks.shift();
+
+        if (!next) {
+            await this.textChannel
+                .send(
+                    "✅ Antrean sudah selesai. Bot akan keluar jika tetap kosong selama 2 menit.",
+                )
+                .catch(() => null);
+
+            this.scheduleDisconnect();
+            return;
+        }
+
+        this.current = next;
+
+        try {
+            await this.player.playTrack({
+                track: {
+                    encoded: next.encoded,
+                    userData: {
+                        requestedBy: next.requestedBy,
+                    },
+                },
+            });
+
+            await this.player.setGlobalVolume(this.volume);
+        } catch (error) {
+            console.error(`[PLAY TRACK ERROR][${this.guildId}]`, error);
+            this.current = null;
+            await this.playNext();
+        }
+    }
+
+    async skip() {
+        if (!this.current) return false;
+        await this.player.stopTrack();
+        return true;
+    }
+
+    async pause() {
+        await this.player.setPaused(true);
+    }
+
+    async resume() {
+        await this.player.setPaused(false);
+    }
+
+    async setVolume(value) {
+        this.volume = value;
+        await this.player.setGlobalVolume(value);
+    }
+
+    shuffle() {
+        for (let i = this.tracks.length - 1; i > 0; i -= 1) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [this.tracks[i], this.tracks[j]] = [this.tracks[j], this.tracks[i]];
+        }
+    }
+
+    remove(position) {
+        const index = position - 1;
+        if (index < 0 || index >= this.tracks.length) return null;
+        return this.tracks.splice(index, 1)[0];
+    }
+
+    clear() {
+        this.tracks = [];
+    }
+
+    setLoop(mode) {
+        this.loopMode = mode;
+    }
+
+    async destroy() {
+        if (this.destroyed) return;
+
+        this.destroyed = true;
+        this.clearDisconnectTimer();
+        this.clear();
+        this.current = null;
+
+        await this.player.stopTrack().catch(() => null);
+        await this.shoukaku.leaveVoiceChannel(this.guildId).catch(() => null);
+    }
 }
 
 class QueueManager {
-  constructor(shoukaku) {
-    this.shoukaku = shoukaku;
-    this.queues = new Map();
-  }
-
-  get(guildId) {
-    return this.queues.get(guildId);
-  }
-
-  async create({ guild, voiceChannel, textChannel }) {
-    const existing = this.get(guild.id);
-    if (existing) {
-      existing.textChannel = textChannel;
-      return existing;
+    constructor(shoukaku) {
+        this.shoukaku = shoukaku;
+        this.queues = new Map();
     }
 
-    const player = await this.shoukaku.joinVoiceChannel({
-      guildId: guild.id,
-      channelId: voiceChannel.id,
-      shardId: guild.shardId ?? 0,
-      deaf: true,
-    });
+    get(guildId) {
+        return this.queues.get(guildId);
+    }
 
-    const queue = new GuildMusicQueue({
-      guildId: guild.id,
-      textChannel,
-      player,
-      shoukaku: this.shoukaku,
-    });
+    async create({ guild, voiceChannel, textChannel }) {
+        const existing = this.get(guild.id);
+        if (existing) {
+            existing.textChannel = textChannel;
+            return existing;
+        }
 
-    this.queues.set(guild.id, queue);
-    return queue;
-  }
+        const player = await this.shoukaku.joinVoiceChannel({
+            guildId: guild.id,
+            channelId: voiceChannel.id,
+            shardId: guild.shardId ?? 0,
+            deaf: true,
+        });
 
-  async delete(guildId) {
-    const queue = this.get(guildId);
-    if (!queue) return false;
+        const queue = new GuildMusicQueue({
+            guildId: guild.id,
+            textChannel,
+            player,
+            shoukaku: this.shoukaku,
+            onIdleDisconnect: async () => {
+                await this.delete(guild.id);
+            },
+        });
 
-    await queue.destroy();
-    this.queues.delete(guildId);
-    return true;
-  }
+        this.queues.set(guild.id, queue);
+        return queue;
+    }
+
+    async delete(guildId) {
+        const queue = this.get(guildId);
+        if (!queue) return false;
+
+        await queue.destroy();
+        this.queues.delete(guildId);
+        return true;
+    }
 }
 
 module.exports = { QueueManager };
